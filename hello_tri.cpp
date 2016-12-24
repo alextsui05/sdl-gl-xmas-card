@@ -2,8 +2,9 @@
 #include <iostream>
 #include <vector>
 
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
+//#include <GLES2/gl2.h>
+//#include <GLES2/gl2ext.h>
+#include <GL/glew.h>
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -65,8 +66,8 @@ struct context {
     bool initialized;
     bool fps_limited;
     GLuint shaderProgram;
-    //GLuint vao;
-    //GLuint vbo;
+    GLuint vao;
+    GLuint vbo;
     GLint uniformOriginX;
     GLint uniformOriginY;
     GLint uniformZoom;
@@ -88,21 +89,27 @@ struct context {
         dest.x = 200;
         dest.y = 100;
 
-        // send vertex data to the GPU... Nope, this is for OpenGL 3+
-        //glGenVertexArrays(1, &vao);
-        //glBindVertexArray(vao);
-        //glGenBuffers(1, &vbo);
-        //glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        //glBufferData(GL_ARRAY_BUFFER,
-        //    view.verts.size() * sizeof(point),
-        //    &(view.verts[0]),
-        //    GL_STATIC_DRAW);
-
         // initialize window
         SDL_Init(SDL_INIT_VIDEO);
         window = SDL_CreateWindow("SDL GL Triangle", 0, 0, width, height,
             SDL_WINDOW_OPENGL);
         glcontext = SDL_GL_CreateContext(window);
+        
+        glewExperimental = GL_TRUE;
+        if (glewInit() != GLEW_OK) {
+            std::cout << "Failed to initialize GLEW\n";
+            initialized = false;
+        }
+
+        // send vertex data to the GPU... Nope, this is for OpenGL 3+
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
+        glGenBuffers(1, &vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+            view.verts.size() * sizeof(point),
+            &(view.verts[0]),
+            GL_STATIC_DRAW);
 
         loadShader();
 
@@ -219,7 +226,7 @@ void main_loop(void* data)
     glClearColor(ctx->color / 255.0f, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    //glUseProgram(ctx->shaderProgram);
+    glUseProgram(ctx->shaderProgram);
 
     //set up the translation
 	glUniform1f(ctx->uniformOriginX, ctx->view.x);
@@ -228,7 +235,8 @@ void main_loop(void* data)
 
 	//set up the vertices array GLES2 way
 	glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, &(ctx->view.verts[0]));
+    //glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, &(ctx->view.verts[0]));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
 	//draw the triangle
 	glDrawArrays(GL_TRIANGLES, 0, 3);
