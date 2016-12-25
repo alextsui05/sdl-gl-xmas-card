@@ -1,9 +1,8 @@
 #include <stdio.h>
+#include <math.h>
 #include <iostream>
 #include <vector>
 
-//#include <GLES2/gl2.h>
-//#include <GLES2/gl2ext.h>
 #include <GL/glew.h>
 
 #include <SDL2/SDL.h>
@@ -34,6 +33,28 @@ struct point {
         y(b),
         z(c)
     {}
+
+    // ccw (+) rotation in radians
+    void rotate(double theta)
+    {
+        GLfloat tx = x * cos(theta) - y * sin(theta);
+        GLfloat ty = x * sin(theta) + y * cos(theta);
+        x = tx;
+        y = ty;
+    }
+
+    void scale(double s)
+    {
+        x *= s;
+        y *= s;
+        z *= s;
+    }
+
+    void translate(double tx, double ty)
+    {
+        x += tx;
+        y += ty;
+    }
 };
 
 struct view_context {
@@ -41,6 +62,7 @@ struct view_context {
     GLfloat y;
     GLfloat zoom;
     std::vector< point > verts;
+    std::vector< point > star_verts;
     view_context():
         x(0),
         y(0),
@@ -49,6 +71,21 @@ struct view_context {
         verts.push_back(point(0.0, 0.5, 0.0));
         verts.push_back(point(-0.5, -0.5, 0.0));
         verts.push_back(point(0.5, -0.5, 0.0));
+
+        star_verts.push_back(point(0.0, 0.5, 0.0));
+        star_verts.push_back(point(-0.5, -0.5, 0.0));
+        star_verts.push_back(point(0.5, -0.5, 0.0));
+        star_verts.push_back(point(0.0, 0.5, 0.0));
+        star_verts.push_back(point(-0.5, -0.5, 0.0));
+        star_verts.push_back(point(0.5, -0.5, 0.0));
+        for (int i = 0; i < 6; ++i)
+            star_verts[i].scale(0.1);
+        for (int i = 3; i < 6; ++i)
+            star_verts[i].rotate(M_PI);
+        for (int i = 0; i < 3; ++i)
+            star_verts[i].translate(0, 0.533);
+        for (int i = 3; i < 6; ++i)
+            star_verts[i].translate(0, 0.5);
     }
 };
 
@@ -61,16 +98,22 @@ struct context {
     int width;
     int height;
     int color;
+    bool is_red;
     int count;
     bool done;
     bool initialized;
     bool fps_limited;
     GLuint shaderProgram;
+    GLuint uniformColorShader;
     GLuint vao;
-    GLuint vbo;
+    GLuint vbo[2];
+    GLuint vPositionId;
+    GLuint vPositionId2;
+    
     GLint uniformOriginX;
     GLint uniformOriginY;
     GLint uniformZoom;
+    GLint uniformColor;
 
     view_context view;
 
@@ -81,6 +124,7 @@ struct context {
       renderer(0),
       tex(0),
       color(0),
+      is_red(true),
       count(0),
       done(false),
       initialized(true),
@@ -89,12 +133,13 @@ struct context {
         dest.x = 200;
         dest.y = 100;
 
-        // initialize window
+        // initialize window + OpenGL context
         SDL_Init(SDL_INIT_VIDEO);
-        window = SDL_CreateWindow("SDL GL Triangle", 0, 0, width, height,
+        window = SDL_CreateWindow("SDL GL Christmas Card", 0, 0, width, height,
             SDL_WINDOW_OPENGL);
         glcontext = SDL_GL_CreateContext(window);
         
+        // initialize OpenGL extensions
         glewExperimental = GL_TRUE;
         if (glewInit() != GLEW_OK) {
             std::cout << "Failed to initialize GLEW\n";
@@ -104,58 +149,71 @@ struct context {
         // send vertex data to the GPU... Nope, this is for OpenGL 3+
         glGenVertexArrays(1, &vao);
         glBindVertexArray(vao);
-        glGenBuffers(1, &vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glGenBuffers(2, vbo);
+
+        glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
         glBufferData(GL_ARRAY_BUFFER,
             view.verts.size() * sizeof(point),
             &(view.verts[0]),
             GL_STATIC_DRAW);
+        loadPositionalShader( );
+        vPositionId = glGetAttribLocation(shaderProgram, "vPosition");
+        glVertexAttribPointer(vPositionId, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-        loadShader();
+        glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
+        glBufferData(GL_ARRAY_BUFFER,
+            view.star_verts.size() * sizeof(point),
+            &(view.star_verts[0]),
+            GL_STATIC_DRAW);
+        loadUniformColorShader( );
+        vPositionId2 = glGetAttribLocation(uniformColorShader, "vPosition");
+        glVertexAttribPointer(vPositionId2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+        //loadShaders();
 
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
         glViewport(0, 0, width, height);
         SDL_GL_SwapWindow(window);
 
-        for (auto& vert : view.verts) {
-            std::cout << vert.x << " ";
-            std::cout << vert.y << " ";
-            std::cout << vert.z << "\n";
-        }
+        //for (auto& vert : view.verts) {
+        //    std::cout << vert.x << " ";
+        //    std::cout << vert.y << " ";
+        //    std::cout << vert.z << "\n";
+        //}
     }
 
-    void loadShader() {
-        const char vertexShaderSource[] =
-            "attribute vec4 vPosition;		                     \n"
-            "uniform float originX, originY;                     \n"
-            "uniform float zoom;                                 \n"
-            "varying vec3 color;                                 \n"
-            "void main()                                         \n"
-            "{                                                   \n"
-            "   gl_Position = vPosition;                         \n"
-            "   gl_Position.x = (originX + gl_Position.x) * zoom;\n"
-            "   gl_Position.y = (originY + gl_Position.y) * zoom;\n"
-            "   color = gl_Position.xyz + vec3(0.5);             \n"
-            "}                                                   \n";
+    void loadShaders() {
+        loadPositionalShader();
+        loadUniformColorShader();
+    }
 
-        const char fragmentShaderSource[] =
-            "precision mediump float;                     \n"
-            "varying vec3 color;                          \n"
-            "void main()                                  \n"
-            "{                                            \n"
-            "  gl_FragColor = vec4 ( color, 1.0 );        \n"
-            "}                                            \n";
-        
-        //load vertex and fragment shaders
-        GLuint vertexShader = ::loadShader(GL_VERTEX_SHADER, vertexShaderSource);
-        GLuint fragmentShader = ::loadShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
+    void loadPositionalShader()
+    {
+        // compile the positional color shader
+        GLuint vertexShader = loadShaderFromFile(GL_VERTEX_SHADER,
+            "shaders/positional.vs");
+        GLuint fragmentShader = loadShaderFromFile(GL_FRAGMENT_SHADER,
+            "shaders/color.fs");
         shaderProgram = buildProgram(vertexShader, fragmentShader, "vPosition");
 
         //save location of uniform variables
         uniformOriginX = glGetUniformLocation(shaderProgram, "originX");
         uniformOriginY = glGetUniformLocation(shaderProgram, "originY");
         uniformZoom = glGetUniformLocation(shaderProgram, "zoom");
+    }
+
+    void loadUniformColorShader()
+    {
+        // compile the uniform color shader
+        GLuint uniformColorVertexShader = loadShaderFromFile(GL_VERTEX_SHADER,
+            "shaders/color.vs");
+        GLuint fragmentShader2 = loadShaderFromFile(GL_FRAGMENT_SHADER,
+            "shaders/color.fs");
+        uniformColorShader = buildProgram(uniformColorVertexShader,
+            fragmentShader2, "vPosition");
+
+        uniformColor = glGetUniformLocation(uniformColorShader, "uColor");
     }
 
     operator bool() const
@@ -166,6 +224,21 @@ struct context {
 
 void main_loop(void*);
 
+void print_text()
+{
+    std::cout << "Merry Christmas!\n"
+        << "\n"
+        << "I'd like to think of this as a modern handwritten Christmas card.\n"
+        << "It's written in C++ and compiled to Javascript.\n"
+        << "It's an example of the wonderful world we live in.\n"
+        << "But it wouldn't be as wonderful if I didn't have you as a friend.\n"
+        << "Thanks for being a part of it.\n"
+        << "\n"
+        << "Best wishes in 2017,\n"
+        << "\n"
+        << "Alex\n";
+}
+
 int main()
 {
   // initialize context
@@ -173,7 +246,8 @@ int main()
   if (!ctx)
       return 1;
 
-  printf("you should see an image.\n");
+  print_text();
+
 #ifdef EMSCRIPTEN
   emscripten_set_main_loop_arg(main_loop, &ctx, -1, 1);
 #else
@@ -223,25 +297,36 @@ void main_loop(void* data)
     }
 
     // render frame
-    glClearColor(ctx->color / 255.0f, 0, 0, 1);
+    // christmas light background effect
+    if (ctx->is_red)
+        glClearColor(ctx->color / 255.0f, 0, 0, 1);
+    else
+        glClearColor(0, ctx->color / 255.0f, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
+    ctx->color = (ctx->color + 1) % 256;
+    if (ctx->color == 0) {
+        ctx->is_red = ! (ctx->is_red);
+    }
 
+	//draw the triangle (aka xmas tree)
     glUseProgram(ctx->shaderProgram);
-
-    //set up the translation
 	glUniform1f(ctx->uniformOriginX, ctx->view.x);
 	glUniform1f(ctx->uniformOriginY, ctx->view.y);
 	glUniform1f(ctx->uniformZoom, ctx->view.zoom);
-
-	//set up the vertices array GLES2 way
-	glEnableVertexAttribArray(0);
-    //glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, &(ctx->view.verts[0]));
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-	//draw the triangle
+    glBindBuffer(GL_ARRAY_BUFFER, ctx->vbo[0]);
+    GLint vPositionId = glGetAttribLocation(ctx->shaderProgram, "vPosition");
+    glVertexAttribPointer(vPositionId, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(vPositionId);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    SDL_GL_SwapWindow(ctx->window);
+    // draw the star on top of the tree
+    glUseProgram(ctx->uniformColorShader);
+    glUniform3f(ctx->uniformColor, 1, 140 / 255.0f, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, ctx->vbo[1]);
+    vPositionId = glGetAttribLocation(ctx->uniformColorShader, "vPosition");
+    glVertexAttribPointer(vPositionId, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(vPositionId);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    ctx->color = (ctx->color + 1) % 256;
+    SDL_GL_SwapWindow(ctx->window);
 }

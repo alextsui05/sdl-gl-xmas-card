@@ -1,5 +1,8 @@
 #include "shaders.h"
 #include <iostream>
+#include <string>
+#include <sstream>
+#include <fstream>
 #include <stdio.h>
 
 using namespace std;
@@ -37,7 +40,27 @@ GLuint loadShader(GLenum type, const char *source)
 	return shader;
 }
 
-GLuint buildProgram(GLuint vertexShader, GLuint fragmentShader, const char * vertexPositionName)
+GLuint loadShaderFromFile(GLenum type, const char* filename)
+{
+    std::ifstream ifs(filename);
+    if (!ifs.is_open()) {
+        std::cerr << "Error opening shader file: " << filename << "\n";
+        return 0;
+    }
+    std::string str;
+    std::stringstream ss;
+    while (std::getline(ifs, str)) {
+#ifndef EMSCRIPTEN
+        if (str.size() > 9 && str.substr(0, 9) == "precision") {
+            continue;
+        }
+#endif
+        ss << str << "\n";
+    }
+    return loadShader(type, ss.str().c_str());
+}
+
+GLuint buildProgram(GLuint vertexShader, GLuint fragmentShader, const char* vertexPositionName)
 {
 	//create a GL program and link it
 	GLuint programObject = glCreateProgram();
