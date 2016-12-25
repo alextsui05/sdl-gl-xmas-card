@@ -308,16 +308,16 @@ void main_loop(void* data)
         ctx->is_red = ! (ctx->is_red);
     }
 
-	//draw the triangle (aka xmas tree)
+    //draw the triangle (aka xmas tree)
     glUseProgram(ctx->shaderProgram);
-	glUniform1f(ctx->uniformOriginX, ctx->view.x);
-	glUniform1f(ctx->uniformOriginY, ctx->view.y);
-	glUniform1f(ctx->uniformZoom, ctx->view.zoom);
+    glUniform1f(ctx->uniformOriginX, ctx->view.x);
+    glUniform1f(ctx->uniformOriginY, ctx->view.y);
+    glUniform1f(ctx->uniformZoom, ctx->view.zoom);
     glBindBuffer(GL_ARRAY_BUFFER, ctx->vbo[0]);
     GLint vPositionId = glGetAttribLocation(ctx->shaderProgram, "vPosition");
     glVertexAttribPointer(vPositionId, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(vPositionId);
-	glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     // draw the star on top of the tree
     glUseProgram(ctx->uniformColorShader);
@@ -326,7 +326,7 @@ void main_loop(void* data)
     vPositionId = glGetAttribLocation(ctx->uniformColorShader, "vPosition");
     glVertexAttribPointer(vPositionId, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(vPositionId);
-	glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
     SDL_GL_SwapWindow(ctx->window);
 }
