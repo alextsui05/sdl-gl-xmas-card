@@ -1,0 +1,26 @@
+precision mediump float;
+varying vec3 color;
+void main()
+{
+  gl_FragColor = vec4 ( color, 1.0 );
+}
+attribute vec3 vPosition;
+uniform vec3 uColor;
+varying vec3 color;
+
+void main() {
+    gl_Position = vec4(vPosition, 1);
+
+    color = uColor;
+}
+attribute vec4 vPosition;
+uniform float originX, originY;
+uniform float zoom;
+varying vec3 color;
+void main()
+{
+   gl_Position = vPosition;
+   gl_Position.x = (originX + gl_Position.x) * zoom;
+   gl_Position.y = (originY + gl_Position.y) * zoom;
+   color = gl_Position.xyz + vec3(0.5);
+}
